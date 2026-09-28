@@ -11,6 +11,7 @@ FlowMuse includes a Vue frontend and a working FastAPI backend. The default runn
 - Text and vision requests through a Chat Completions-compatible API.
 - Image generation and reference-image editing through an Images-compatible API, plus support for compatible Chat image-generation providers.
 - Workflow saving, loading, and deletion, with SQLite-backed run history and events.
+- A generated-results list that excludes reference uploads and gallery duplicates, with image downloads that keep the editor open.
 - Asynchronous execution, incremental status updates, cancellation, time budgets, and concurrency limits.
 - Multiple themes using CSS variables, with the selected theme saved locally.
 - Provider API keys excluded from saved workflows, run snapshots, and application logs.
@@ -136,6 +137,7 @@ Run from the repository root using the local Python environment:
 ```powershell
 server/.venv/Scripts/python -m pytest server/tests -q -c server/pyproject.toml
 server/.venv/Scripts/python -m ruff check server
+npm --prefix web run test
 npm --prefix web run build
 ```
 

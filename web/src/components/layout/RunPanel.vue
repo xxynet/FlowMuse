@@ -3,6 +3,8 @@ import { computed } from 'vue'
 import { Download, Eraser, ScrollText } from 'lucide-vue-next'
 import { useFlowStore } from '@/stores/flowStore'
 import { useRunStore } from '@/stores/runStore'
+import { generatedImages } from '@/services/resultImages'
+import { useImageDownload } from '@/composables/useImageDownload'
 import type { LogLevel } from '@/stores/runStore'
 
 const flow = useFlowStore()
@@ -14,18 +16,8 @@ const levelCls: Record<LogLevel, string> = {
   error: 'text-danger',
 }
 
-/** 汇总所有节点产出的图片，方便统一下载 */
-const gallery = computed(() =>
-  flow.nodes
-    .filter((n) => n.data.result?.images?.length)
-    .flatMap((n) =>
-      (n.data.result?.images ?? []).map((src, i) => ({
-        key: `${n.id}-${i}`,
-        src,
-        label: n.data.label,
-      })),
-    ),
-)
+const gallery = computed(() => generatedImages(flow.nodes))
+const { download, pending } = useImageDownload()
 </script>
 
 <template>
@@ -50,13 +42,14 @@ const gallery = computed(() =>
     <div class="max-h-[42%] shrink-0 overflow-y-auto border-t border-border p-3">
       <p class="mb-2 text-[12px] font-semibold text-text-muted">生成结果（{{ gallery.length }}）</p>
       <div v-if="gallery.length" class="grid grid-cols-3 gap-1.5">
-        <a
+        <button
           v-for="item in gallery"
           :key="item.key"
-          :href="item.src"
-          :download="`flowmuse-${item.key}`"
+          type="button"
+          :disabled="pending.has(`flowmuse-${item.key}`)"
+          @click="download(item.src, `flowmuse-${item.key}`, item.downloadUrl)"
           :title="`${item.label} · 点击下载`"
-          class="group relative block overflow-hidden rounded-md border border-border"
+          class="group relative block overflow-hidden rounded-md border border-border disabled:opacity-50"
         >
           <img :src="item.src" :alt="item.label" class="aspect-square w-full object-cover" />
           <span
@@ -64,10 +57,9 @@ const gallery = computed(() =>
           >
             <Download :size="16" class="text-white" />
           </span>
-        </a>
+        </button>
       </div>
       <p v-else class="text-[11px] text-text-muted">运行后这里会汇总展示生成的图片。</p>
     </div>
   </aside>
 </template>
-

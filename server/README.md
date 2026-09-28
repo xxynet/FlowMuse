@@ -56,6 +56,7 @@ Saved workflows contain prompts, node positions, connections, and input images. 
 | POST | `/api/runs` | Validate and enqueue a graph; return HTTP 202 with a run ID. |
 | GET | `/api/runs` | List run history, optionally filtered by `workflowId`. |
 | GET | `/api/runs/{id}?after=0` | Read run status and incremental events. |
+| GET | `/api/runs/{id}/images/{sequence}/{index}` | Download an image from a recorded successful node event; image index is zero-based. |
 | POST | `/api/runs/{id}/cancel` | Cancel an active or queued run; finished runs retain their status. |
 | DELETE | `/api/runs/{id}` | Delete a finished run and its events; active runs return HTTP 409. |
 
@@ -92,7 +93,7 @@ Runs begin as `queued`, move to `running`, and finish as `success`, `error`, `ca
 
 On shutdown or restart, unfinished runs become `interrupted`. Live credentials and in-memory tasks are not recovered, and model requests are not automatically retried.
 
-Event types are `run_started`, `node_started`, `node_success`, `node_error`, `run_success`, `run_error`, `run_cancelled`, and `run_interrupted`. Each event includes a monotonically increasing per-run `sequence` and a timestamp in `time`. Node events include `nodeId`; successful node events include `result: {text?, images?}`.
+Event types are `run_started`, `node_started`, `node_success`, `node_error`, `run_success`, `run_error`, `run_cancelled`, and `run_interrupted`. Each event includes a monotonically increasing per-run `sequence` and a timestamp in `time`. Node events include `nodeId`; successful node events include `result: {text?, images?, downloadUrls?}`. The `downloadUrls` array contains same-origin download paths aligned with `images`; the preview URLs remain unchanged.
 
 A polling response contains run metadata, `events`, `nextCursor`, and `hasMore`. Request the next page with `after=nextCursor`. Each page contains at most 100 events. Drain all `hasMore` pages before treating a terminal run status as fully consumed.
 
@@ -140,7 +141,7 @@ For image-generation nodes, connected upstream text takes precedence over the lo
 
 Input images are read by the frontend as data URLs; there is no separate upload service. PNG, JPEG, WebP, and GIF inputs are supported up to 10 MiB per image. SVG input is not supported. Returned inline images are subject to the same validation.
 
-Remote image URLs are passed to the browser without downloading them on the backend. Temporary provider URLs may expire. Base64 output is retained in run events.
+Remote image URLs are used directly for previews. When a user downloads an image, the backend reads the URL from its stored run event and returns an attachment; the download endpoint does not accept arbitrary URLs. Provider authorization headers and browser credentials are not forwarded. Redirects are rejected, downloads have a 60-second total budget, and the response size limit also applies. Temporary provider URLs may expire. Base64 output is retained in run events. File extensions are determined from image bytes, not a provider URL suffix.
 
 Protocol references: [image generation](https://developers.openai.com/api/docs/guides/image-generation) and [vision inputs](https://developers.openai.com/api/docs/guides/images-vision). The implementation uses HTTPX rather than a provider-specific SDK.
 

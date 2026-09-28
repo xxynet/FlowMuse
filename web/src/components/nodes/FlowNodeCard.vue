@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { Handle, Position } from '@vue-flow/core'
 import { CheckCircle2, CircleDashed, Loader2, X, XCircle } from 'lucide-vue-next'
 import { nodeRegistry } from '@/registry/nodeRegistry'
+import { useImageDownload } from '@/composables/useImageDownload'
 import { useFlowStore } from '@/stores/flowStore'
 import type { FlowNodeData, NodeKind } from '@/types/flow'
 import FieldRenderer from '@/components/fields/FieldRenderer.vue'
@@ -19,6 +20,12 @@ const props = defineProps<{
 }>()
 
 const flow = useFlowStore()
+const { download, pending } = useImageDownload()
+
+function downloadResult(index: number) {
+  const source = props.data?.result?.images?.[index]
+  if (source) void download(source, 'flowmuse-' + props.id + '-' + (index + 1), props.data?.result?.downloadUrls?.[index])
+}
 
 const schema = computed(() => (props.type ? nodeRegistry[props.type as NodeKind] : undefined))
 const status = computed(() => props.data?.status ?? 'idle')
@@ -118,26 +125,28 @@ function setParam(key: string, value: unknown) {
     <div v-if="resultText && schema.outputs.some((p) => p.kind === 'text')" class="fm-result-text nodrag nowheel">{{ resultText }}</div>
 
     <div v-if="showResultImages" class="px-3 pb-3">
-      <a
+      <button
         v-if="resultImages.length === 1"
-        :href="resultImages[0]"
-        download="flowmuse-result.svg"
+        type="button"
+        :disabled="pending.has(`flowmuse-${id}-1`)"
+        @click.stop="downloadResult(0)"
         title="点击下载"
-        class="block"
+        class="nodrag block w-full disabled:opacity-50"
       >
         <img :src="resultImages[0]" alt="生成结果" class="w-full rounded-lg border border-border" />
-      </a>
+      </button>
       <div v-else class="grid grid-cols-3 gap-1.5">
-        <a
+        <button
           v-for="(img, i) in resultImages.slice(0, 9)"
           :key="i"
-          :href="img"
-          :download="`flowmuse-${id}-${i + 1}.svg`"
+          type="button"
+          :disabled="pending.has(`flowmuse-${id}-${i + 1}`)"
+          @click.stop="downloadResult(i)"
           title="点击下载"
-          class="block overflow-hidden rounded-md border border-border"
+          class="nodrag block overflow-hidden rounded-md border border-border disabled:opacity-50"
         >
           <img :src="img" :alt="`结果 ${i + 1}`" class="aspect-square w-full object-cover" />
-        </a>
+        </button>
       </div>
     </div>
 

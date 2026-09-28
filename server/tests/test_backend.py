@@ -373,3 +373,98 @@ async def test_upstream_503_reports_service_unavailability(tmp_path):
         assert "暂时不可用" in state["error"]
         assert "额度" not in state["error"]
         assert SECRET not in json.dumps(state)
+
+
+async def record_image(app, source):
+    async with app.state.database.sessions() as session:
+        row = Run(graph={}, status="success")
+        session.add(row)
+        await session.flush()
+        session.add(RunEvent(run_id=row.id, sequence=1, payload={
+            "sequence": 1, "type": "node_success", "nodeId": "gen",
+            "result": {"images": [source]},
+        }))
+        await session.commit()
+        return row.id
+
+
+async def test_inline_result_download_has_correct_bytes_and_filename(tmp_path):
+    async with client_for(settings(tmp_path)) as (client, app):
+        run_id = await record_image(app, IMAGE)
+        state = (await client.get(f"/api/runs/{run_id}")).json()
+        url = state["events"][0]["result"]["downloadUrls"][0]
+        response = await client.get(url)
+        assert response.status_code == 200
+        assert response.content == base64.b64decode(PNG)
+        assert response.headers["content-type"] == "image/png"
+        assert response.headers["content-disposition"] == 'attachment; filename="flowmuse-1-1.png"'
+        assert response.headers["cache-control"] == "no-store"
+        assert (await client.get(f"/api/runs/{run_id}/images/1/-1")).status_code == 404
+        assert (await client.get(f"/api/runs/{run_id}/images/1/1")).status_code == 404
+        assert (await client.get(f"/api/runs/{run_id}/images/2/0")).status_code == 404
+        assert (await client.get("/api/runs/missing/images/1/0")).status_code == 404
+
+
+async def test_remote_result_download_does_not_forward_credentials(tmp_path):
+    calls = []
+    def handler(request):
+        calls.append(request)
+        assert request.method == "GET"
+        assert "authorization" not in request.headers
+        assert "cookie" not in request.headers
+        # Extension comes from the bytes, not a misleading URL or Content-Type.
+        return httpx.Response(200, content=base64.b64decode(PNG), headers={"content-type": "application/octet-stream"})
+    async with client_for(settings(tmp_path, provider_api_key=SECRET), handler) as (client, app):
+        run_id = await record_image(app, "https://images.example/result.svg?signature=test")
+        response = await client.get(f"/api/runs/{run_id}/images/1/0", headers={"cookie": "private=test"})
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "image/png"
+        assert response.headers["content-disposition"].endswith('.png"')
+        assert len(calls) == 1
+
+
+@pytest.mark.parametrize("source", ["file:///private/image.png", "http://localhost/image.png",
+                                    "http://127.0.0.1/image.png", "http://192.168.1.1/image.png",
+                                    "https://user:secret@images.example/image.png"])
+async def test_invalid_download_addresses_are_rejected(tmp_path, source):
+    def handler(request):
+        pytest.fail("Invalid address must not be requested")
+    async with client_for(settings(tmp_path), handler) as (client, app):
+        run_id = await record_image(app, source)
+        response = await client.get(f"/api/runs/{run_id}/images/1/0")
+        assert response.status_code == 422
+        assert "secret" not in response.text
+
+
+@pytest.mark.parametrize("status,body", [(302, b""), (403, b"secret upstream body"),
+                                        (200, b"<html>Not an image</html>")])
+async def test_invalid_remote_download_returns_safe_error(tmp_path, status, body):
+    calls = []
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(status, content=body, headers={"Location": "http://127.0.0.1/private"})
+    async with client_for(settings(tmp_path), handler) as (client, app):
+        run_id = await record_image(app, "https://images.example/result.png")
+        response = await client.get(f"/api/runs/{run_id}/images/1/0")
+        assert response.status_code == 502
+        assert "secret upstream body" not in response.text
+        assert len(calls) == 1
+
+
+async def test_download_size_and_network_limits(tmp_path):
+    def handler(request):
+        return httpx.Response(200, content=base64.b64decode(PNG) + b"x" * 2048)
+    async with client_for(settings(tmp_path, max_response_bytes=1024), handler) as (client, app):
+        run_id = await record_image(app, "https://images.example/result.png")
+        assert (await client.get(f"/api/runs/{run_id}/images/1/0")).status_code == 413
+
+
+@pytest.mark.parametrize("error_type,status", [(httpx.ReadTimeout, 504), (httpx.ConnectError, 502)])
+async def test_download_transport_errors_are_safe(tmp_path, error_type, status):
+    def handler(request):
+        raise error_type(SECRET, request=request)
+    async with client_for(settings(tmp_path), handler) as (client, app):
+        run_id = await record_image(app, "https://images.example/result.png")
+        response = await client.get(f"/api/runs/{run_id}/images/1/0")
+        assert response.status_code == status
+        assert SECRET not in response.text

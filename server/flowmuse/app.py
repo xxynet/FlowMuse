@@ -13,6 +13,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .config import Settings
 from .database import Database, Run, RunEvent, Workflow, now
+from .images import read_image
 from .provider import Provider, ProviderError
 from .runner import TERMINAL, RunManager
 from .schemas import Graph, RunCreate, WorkflowWrite
@@ -77,7 +78,9 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
     async def lifespan(app: FastAPI):
         await db.initialize()
         async with httpx.AsyncClient(timeout=config.request_timeout, follow_redirects=False,
-                                     transport=transport) as client:
+                                     transport=transport) as client, httpx.AsyncClient(
+                                         timeout=30, follow_redirects=False, transport=transport) as image_client:
+            app.state.image_client = image_client
             manager = RunManager(db, Provider(config, client), config)
             app.state.manager = manager
             await manager.recover()
@@ -191,10 +194,36 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
         rows = (await db_session.scalars(select(RunEvent)
                                          .where(RunEvent.run_id == run_id, RunEvent.sequence > after)
                                          .order_by(RunEvent.sequence).limit(101))).all()
-        events = [event.payload for event in rows[:100]]
+        events = []
+        for event in rows[:100]:
+            payload = dict(event.payload)
+            if payload.get("type") == "node_success" and payload.get("result", {}).get("images"):
+                payload["result"] = {**payload["result"], "downloadUrls": [
+                    f"/api/runs/{run_id}/images/{event.sequence}/{index}"
+                    for index in range(len(payload["result"]["images"]))
+                ]}
+            events.append(payload)
         return {**run_summary(row), "events": events, "hasMore": len(rows) > 100,
                 "nextCursor": events[-1]["sequence"] if events else after}
 
+    @app.get("/api/runs/{run_id}/images/{sequence}/{index}")
+    async def download_image(run_id: str, sequence: int, index: int, request: Request,
+                             db_session: AsyncSession = session_dependency):
+        event = await db_session.get(RunEvent, (run_id, sequence))
+        if event is None or event.payload.get("type") != "node_success":
+            raise HTTPException(404, "运行图片不存在")
+        images = event.payload.get("result", {}).get("images", [])
+        if index < 0 or index >= len(images):
+            raise HTTPException(404, "运行图片不存在")
+        source = images[index]
+        # Release the database transaction before performing a potentially slow download.
+        await db_session.rollback()
+        data, mime, extension = await read_image(source, request.app.state.image_client, config.max_response_bytes)
+        filename = f"flowmuse-{sequence}-{index + 1}.{extension}"
+        return Response(data, media_type=mime, headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+        })
     @app.post("/api/runs/{run_id}/cancel")
     async def cancel_run(run_id: str, request: Request, db_session: AsyncSession = session_dependency):
         await get_run(run_id, db_session)
@@ -232,7 +261,3 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
 
 
 app = create_app()
-
-
-
-

@@ -53,6 +53,8 @@ export type NodeRunStatus = 'idle' | 'running' | 'success' | 'error'
 export interface NodeResult {
   text?: string
   images?: string[]
+  /** Same-origin downloads for persisted run images, aligned with images. */
+  downloadUrls?: string[]
 }
 
 export interface FlowNodeData {
