@@ -1,0 +1,301 @@
+@import 'tailwindcss';
+
+/* ==========================================================================
+   主题令牌层
+   新增一套主题只需两步：
+   1. 在这里新增一组 :root[data-theme='xxx'] { --fm-* } 变量
+   2. 在 src/composables/useTheme.ts 的 themes 数组里登记一项
+   组件只允许使用语义化工具类（bg-primary / text-text / border-border …），
+   不允许写死颜色值，这样主题才能整体切换。
+   ========================================================================== */
+
+:root[data-theme='blue'] {
+  --fm-canvas: #f2f6fd;
+  --fm-surface: #ffffff;
+  --fm-surface-2: #edf3fc;
+  --fm-border: #dce5f3;
+  --fm-border-strong: #bfcfe6;
+  --fm-text: #182742;
+  --fm-text-muted: #5c6e8c;
+  --fm-primary: #2563eb;
+  --fm-primary-hover: #1d4ed8;
+  --fm-primary-soft: #e2ecfe;
+  --fm-primary-fg: #ffffff;
+  --fm-accent: #0ea5e9;
+  --fm-success: #16a34a;
+  --fm-warning: #d97706;
+  --fm-danger: #dc2626;
+  --fm-shadow: 0 1px 2px rgba(24, 39, 66, 0.06), 0 4px 16px rgba(24, 39, 66, 0.08);
+}
+
+:root[data-theme='blue-dark'] {
+  --fm-canvas: #0a1120;
+  --fm-surface: #101b31;
+  --fm-surface-2: #16233d;
+  --fm-border: #223255;
+  --fm-border-strong: #31466f;
+  --fm-text: #e4ecfb;
+  --fm-text-muted: #8ba1c6;
+  --fm-primary: #3b82f6;
+  --fm-primary-hover: #60a5fa;
+  --fm-primary-soft: rgba(59, 130, 246, 0.16);
+  --fm-primary-fg: #f4f8ff;
+  --fm-accent: #38bdf8;
+  --fm-success: #34d399;
+  --fm-warning: #fbbf24;
+  --fm-danger: #f87171;
+  --fm-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+:root[data-theme='violet'] {
+  --fm-canvas: #f7f5ff;
+  --fm-surface: #ffffff;
+  --fm-surface-2: #f1edfc;
+  --fm-border: #e4ddf5;
+  --fm-border-strong: #cbc0ea;
+  --fm-text: #241b3f;
+  --fm-text-muted: #6f6392;
+  --fm-primary: #7c3aed;
+  --fm-primary-hover: #6d28d9;
+  --fm-primary-soft: #efe7fd;
+  --fm-primary-fg: #ffffff;
+  --fm-accent: #a855f7;
+  --fm-success: #16a34a;
+  --fm-warning: #d97706;
+  --fm-danger: #dc2626;
+  --fm-shadow: 0 1px 2px rgba(36, 27, 63, 0.06), 0 4px 16px rgba(36, 27, 63, 0.08);
+}
+
+:root[data-theme='emerald'] {
+  --fm-canvas: #f2faf6;
+  --fm-surface: #ffffff;
+  --fm-surface-2: #eaf6f0;
+  --fm-border: #d9eAE3;
+  --fm-border-strong: #bcd8cb;
+  --fm-text: #123125;
+  --fm-text-muted: #527263;
+  --fm-primary: #059669;
+  --fm-primary-hover: #047857;
+  --fm-primary-soft: #dff3ea;
+  --fm-primary-fg: #ffffff;
+  --fm-accent: #14b8a6;
+  --fm-success: #16a34a;
+  --fm-warning: #d97706;
+  --fm-danger: #dc2626;
+  --fm-shadow: 0 1px 2px rgba(18, 49, 37, 0.06), 0 4px 16px rgba(18, 49, 37, 0.08);
+}
+
+/* 把运行时令牌映射进 Tailwind 主题，生成语义化工具类 */
+@theme inline {
+  --color-canvas: var(--fm-canvas);
+  --color-surface: var(--fm-surface);
+  --color-surface-2: var(--fm-surface-2);
+  --color-border: var(--fm-border);
+  --color-border-strong: var(--fm-border-strong);
+  --color-text: var(--fm-text);
+  --color-text-muted: var(--fm-text-muted);
+  --color-primary: var(--fm-primary);
+  --color-primary-hover: var(--fm-primary-hover);
+  --color-primary-soft: var(--fm-primary-soft);
+  --color-primary-fg: var(--fm-primary-fg);
+  --color-accent: var(--fm-accent);
+  --color-success: var(--fm-success);
+  --color-warning: var(--fm-warning);
+  --color-danger: var(--fm-danger);
+}
+
+@layer base {
+  html,
+  body,
+  #app {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-canvas text-text antialiased;
+    font-family: 'Inter', 'PingFang SC', 'Microsoft YaHei', system-ui, -apple-system, sans-serif;
+    font-size: 13px;
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--fm-border-strong);
+    border-radius: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@layer components {
+  /* ---------- 通用控件 ---------- */
+  .fm-btn-primary {
+    @apply inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-[13px] font-medium text-primary-fg transition hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .fm-btn-ghost {
+    @apply inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[13px] text-text-muted transition hover:bg-surface-2 hover:text-text disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .fm-icon-btn {
+    @apply inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-text-muted transition hover:bg-surface-2 hover:text-text;
+  }
+
+  .fm-input {
+    @apply w-full rounded-md border border-border bg-surface px-2 py-1.5 text-[12px] text-text outline-none transition placeholder:text-text-muted/60 focus:border-primary focus:ring-2 focus:ring-primary/25;
+  }
+
+  .fm-field-label {
+    @apply mb-1 block text-[11px] font-medium text-text-muted;
+  }
+
+  .fm-menu {
+    @apply absolute right-0 top-full z-40 mt-1.5 w-44 rounded-xl border border-border bg-surface p-1.5;
+    box-shadow: var(--fm-shadow);
+  }
+
+  .fm-menu-item {
+    @apply flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-[13px] transition hover:bg-surface-2;
+  }
+
+  /* ---------- 左侧边栏 ---------- */
+  .fm-side-title {
+    @apply mb-2 px-1 text-[11px] font-semibold uppercase tracking-wider text-text-muted;
+  }
+
+  .fm-preset-card {
+    @apply flex w-full items-center gap-2.5 rounded-xl border border-border bg-surface p-2.5 text-left transition hover:border-primary;
+  }
+
+  .fm-preset-icon {
+    @apply flex h-8 w-8 shrink-0 items-center justify-center rounded-lg;
+    background: color-mix(in srgb, var(--node-accent, var(--fm-primary)) 14%, transparent);
+    color: var(--node-accent, var(--fm-primary));
+  }
+
+  .fm-palette-item {
+    @apply flex w-full cursor-grab items-center gap-2.5 rounded-xl border border-border bg-surface p-2.5 transition hover:border-primary active:cursor-grabbing;
+  }
+
+  .fm-upload {
+    @apply flex h-24 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-border-strong text-[12px] text-text-muted transition hover:border-primary hover:text-primary;
+  }
+
+  /* ---------- 画布节点卡片 ---------- */
+  .fm-node {
+    @apply relative w-[290px] rounded-xl border border-border bg-surface;
+    box-shadow: var(--fm-shadow);
+  }
+
+  .fm-node.is-selected {
+    @apply border-primary ring-2 ring-primary/30;
+  }
+
+  .fm-node.is-running {
+    @apply border-primary;
+  }
+
+  .fm-node.is-success {
+    @apply border-success/60;
+  }
+
+  .fm-node.is-error {
+    @apply border-danger;
+  }
+
+  .fm-node-header {
+    @apply flex h-[52px] items-center gap-2 border-b border-border px-3;
+  }
+
+  .fm-node-icon {
+    @apply flex h-7 w-7 shrink-0 items-center justify-center rounded-lg;
+    background: color-mix(in srgb, var(--node-accent) 15%, transparent);
+    color: var(--node-accent);
+  }
+
+  .fm-port-label {
+    @apply flex h-[26px] items-center text-[11px] leading-none text-text-muted;
+  }
+
+  .fm-result-text {
+    @apply mx-3 mb-3 max-h-28 overflow-y-auto whitespace-pre-wrap rounded-lg bg-surface-2 p-2 font-mono text-[11px] leading-4 text-text-muted;
+  }
+
+  .fm-error-text {
+    @apply mx-3 mb-3 whitespace-pre-wrap rounded-lg px-2 py-1.5 text-[11px] leading-4;
+    background: color-mix(in srgb, var(--fm-danger) 10%, transparent);
+    color: var(--fm-danger);
+  }
+}
+
+/* ==========================================================================
+   Vue Flow 主题适配（第三方组件无法用工具类，统一在这里覆盖）
+   ========================================================================== */
+.vue-flow__edge-path {
+  stroke: var(--fm-border-strong);
+  stroke-width: 1.6;
+}
+
+.vue-flow__edge.selected .vue-flow__edge-path,
+.vue-flow__edge:hover .vue-flow__edge-path {
+  stroke: var(--fm-primary);
+}
+
+.vue-flow__connection-path {
+  stroke: var(--fm-primary);
+  stroke-width: 1.6;
+}
+
+.vue-flow__handle {
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--fm-surface);
+  background: var(--node-accent, var(--fm-primary));
+}
+
+.vue-flow__handle.connectingto {
+  background: var(--fm-primary);
+}
+
+.vue-flow__controls {
+  overflow: hidden;
+  border-radius: 10px;
+  box-shadow: var(--fm-shadow);
+}
+
+.vue-flow__controls-button {
+  background: var(--fm-surface);
+  border-bottom: 1px solid var(--fm-border);
+  fill: var(--fm-text);
+}
+
+.vue-flow__controls-button:hover {
+  background: var(--fm-surface-2);
+}
+
+.vue-flow__minimap {
+  overflow: hidden;
+  border: 1px solid var(--fm-border);
+  border-radius: 10px;
+  background: var(--fm-surface);
+}
+
+.vue-flow__minimap-mask {
+  fill: color-mix(in srgb, var(--fm-canvas) 55%, transparent);
+}
+
+.vue-flow__minimap-node {
+  fill: var(--fm-border-strong);
+}
+
+.vue-flow__attribution {
+  background: transparent;
+  color: var(--fm-text-muted);
+}
+
+.vue-flow__background {
+  background: var(--fm-canvas);
+}
