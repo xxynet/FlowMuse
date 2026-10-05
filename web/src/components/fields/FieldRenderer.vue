@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { X } from 'lucide-vue-next'
 import type { FieldSchema } from '@/types/flow'
+import VariableFields from '@/components/fields/VariableFields.vue'
 
 /**
  * 按字段 schema 渲染对应的表单控件。
@@ -30,7 +31,12 @@ function onFile(event: Event) {
 </script>
 
 <template>
-  <label class="block">
+  <div v-if="field.type === 'variables'" class="block">
+    <span class="fm-field-label">{{ field.label }}</span>
+    <VariableFields :model-value="modelValue" @update:model-value="emit('update:modelValue', $event)" />
+    <p v-if="field.hint" class="mt-1 text-[11px] leading-4 text-text-muted">{{ field.hint }}</p>
+  </div>
+  <label v-else class="block">
     <span class="fm-field-label">{{ field.label }}</span>
 
     <input

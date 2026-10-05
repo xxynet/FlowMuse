@@ -1,4 +1,4 @@
-import { BrainCircuit, Images, ImageUp, Sparkles } from 'lucide-vue-next'
+import { BrainCircuit, Images, ImageUp, Sparkles, Type, Braces } from 'lucide-vue-next'
 import type { FieldSchema, NodeKind, NodeTypeSchema } from '@/types/flow'
 
 /**
@@ -17,6 +17,41 @@ export const nodeRegistry: Record<NodeKind, NodeTypeSchema> = {
     fields: [{ key: 'image', label: '图片文件', type: 'image' }],
   },
 
+  'text-input': {
+    type: 'text-input',
+    label: '文本输入',
+    description: '输入剧情或文本素材，传给下游节点',
+    icon: Type,
+    accent: '#eab308',
+    inputs: [],
+    outputs: [{ key: 'text', label: '文本', kind: 'text' }],
+    fields: [{
+      key: 'text',
+      label: '文本内容',
+      type: 'textarea',
+      rows: 6,
+      placeholder: '输入故事梗概，或按第一格到第四格描述剧情…',
+      hint: '连接生图节点的「文本素材」端口，用 {{text}} 将内容填入提示词；也可连接 LLM 的文本端口',
+    }],
+  },
+
+  'variable-set': {
+    type: 'variable-set',
+    label: '变量设置',
+    description: '设置命名变量，供下游提示词引用',
+    icon: Braces,
+    accent: '#f59e0b',
+    inputs: [{ key: 'variables', label: '上游变量', kind: 'variables' }],
+    outputs: [{ key: 'variables', label: '变量', kind: 'variables' }],
+    fields: [{
+      key: 'variables',
+      label: '变量列表',
+      type: 'variables',
+      default: [{ name: '', value: '' }],
+      hint: '支持多个变量。连接下游的「变量」端口，用 {变量名} 或 {{ 变量名 }} 引用；串联时当前节点的同名变量覆盖上游',
+    }],
+  },
+
   llm: {
     type: 'llm',
     label: 'LLM 节点',
@@ -26,6 +61,7 @@ export const nodeRegistry: Record<NodeKind, NodeTypeSchema> = {
     inputs: [
       { key: 'text', label: '文本', kind: 'text' },
       { key: 'image', label: '图片', kind: 'image' },
+      { key: 'variables', label: '变量', kind: 'variables' },
     ],
     outputs: [{ key: 'text', label: '文本', kind: 'text' }],
     fields: [
@@ -39,7 +75,7 @@ export const nodeRegistry: Record<NodeKind, NodeTypeSchema> = {
         type: 'textarea',
         rows: 3,
         placeholder: '请输入提示词…',
-        hint: '支持 {{text}} 变量引用上游文本',
+        hint: '支持 {变量名} 或 {{ 变量名 }} 引用连入的变量；{{text}} 引用上游文本',
       },
       { key: 'temperature', label: '温度', type: 'number', default: 0.7, min: 0, max: 2, step: 0.1 },
     ],
@@ -53,7 +89,10 @@ export const nodeRegistry: Record<NodeKind, NodeTypeSchema> = {
     accent: '#ec4899',
     inputs: [
       { key: 'prompt', label: '提示词', kind: 'text' },
-      { key: 'image', label: '参考图', kind: 'image' },
+      { key: 'text', label: '文本素材 · {{text}}', kind: 'text' },
+      { key: 'image', label: '参考图 1 · 原图', kind: 'image' },
+      { key: 'image2', label: '参考图 2 · 人物 / 风格', kind: 'image' },
+      { key: 'variables', label: '变量', kind: 'variables' },
     ],
     outputs: [{ key: 'images', label: '图片组', kind: 'images' }],
     fields: [
@@ -76,7 +115,7 @@ export const nodeRegistry: Record<NodeKind, NodeTypeSchema> = {
         type: 'textarea',
         rows: 3,
         placeholder: '描述想要的画面…',
-        hint: '支持 {{text}} 变量；连入上游提示词时以上游为准',
+        hint: '用 {变量名} 或 {{ 变量名 }} 引用连入的变量，{{text}} 引用文本素材。「提示词」端口优先；双图需模型支持多图编辑',
       },
       {
         key: 'size',
@@ -111,7 +150,7 @@ export const nodeTypeList = Object.values(nodeRegistry)
 export function defaultParams(fields: FieldSchema[]): Record<string, unknown> {
   const params: Record<string, unknown> = {}
   for (const field of fields) {
-    if (field.default !== undefined) params[field.key] = field.default
+    if (field.default !== undefined) params[field.key] = structuredClone(field.default)
     else if (field.type === 'number') params[field.key] = field.min ?? 0
     else params[field.key] = ''
   }

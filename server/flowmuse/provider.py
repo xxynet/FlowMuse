@@ -160,10 +160,13 @@ class Provider:
         except httpx.InvalidURL:
             raise ProviderError("模型服务或代理 URL 格式无效（InvalidURL）") from None
 
-    async def chat(self, params: Params, prompt: str, image: str | None = None) -> dict:
+    async def chat(
+        self, params: Params, prompt: str, image: str | None = None, image2: str | None = None,
+    ) -> dict:
         content = [{"type": "text", "text": prompt}]
-        if image:
-            content.append({"type": "image_url", "image_url": {"url": image}})
+        for reference in (image, image2):
+            if reference:
+                content.append({"type": "image_url", "image_url": {"url": reference}})
         messages = []
         if params.system:
             messages.append({"role": "system", "content": params.system})
@@ -186,22 +189,31 @@ class Provider:
             raise ProviderError("模型服务未返回文本")
         return {"text": text}
 
-    async def images(self, params: Params, prompt: str, image: str | None) -> dict:
+    async def images(
+        self, params: Params, prompt: str, image: str | None, image2: str | None = None,
+    ) -> dict:
+        if image2 and not image:
+            raise ProviderError("使用参考图 2 时，请同时连接参考图 1")
         if params.apiType == "chat":
             images = []
             for _ in range(params.count):
-                _, produced = content_parts(await self.chat(params, prompt, image))
+                _, produced = content_parts(await self.chat(params, prompt, image, image2))
                 if not produced:
                     raise ProviderError("Chat 生图未返回图片；请确认模型支持图片输出")
                 images.append(produced[0])
             return {"text": prompt, "images": images}
         payload = {"model": params.model, "prompt": prompt, "n": params.count, "size": params.size}
         if image:
-            mime, data = decode_image(image)
-            extension = mime.split("/")[1]
+            # Keep the legacy single-image field; multiple inputs use ordered image[] parts.
+            references = [image, image2] if image2 else [image]
+            files = []
+            for index, reference in enumerate(references, start=1):
+                mime, data = decode_image(reference)
+                extension = mime.split("/")[1]
+                field = "image[]" if image2 else "image"
+                files.append((field, (f"reference-{index}.{extension}", data, mime)))
             result = await self.request(params, "/images/edits",
-                                        data={k: str(v) for k, v in payload.items()},
-                                        files={"image": (f"reference.{extension}", data, mime)})
+                                        data={k: str(v) for k, v in payload.items()}, files=files)
         else:
             result = await self.request(params, "/images/generations", json=payload)
         try:

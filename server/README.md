@@ -87,6 +87,24 @@ Node and edge fields follow the frontend [graph types](../web/src/types/flow.ts)
 
 Use a model supported by your provider. Invalid graphs, parameters, or missing required inputs are rejected before execution. Validation covers duplicate IDs, missing nodes, incompatible ports, multiple connections to one input, and cycles.
 
+### Variables and prompt composition
+
+A variable-set node stores params.variables as a list of {name, value} objects, accepts an optional variables input and emits a merged dictionary through its variables output. The current node overrides upstream names. Connect that output to an image-generation or LLM node's variables input. Names are unique per node, support English/Chinese letters, digits, underscores and hyphens, and must start with a letter or underscore.
+
+Both {name} and {{ name }} interpolate a connected variable in a prompt. Missing names stop the node before its model request. Replacement is single-pass, so placeholders inside a variable value remain literal. Each context is limited to 50 variables and 32000 total value characters; rendered prompts cannot exceed 32000 characters. Empty variable names/values are rejected at run submission. Draft empty values can still be saved.
+
+A text-input node continues to emit params.text without a model request. Its value fills {{text}} through the material input. Explicit named variables override this alias if text is defined. The existing prompt input still selects the full image prompt; connected named variables are then interpolated into that prompt. Without a variable connection, upstream prompts keep their previous behavior.
+
+The comic template uses the generic variable-setting node with an initially empty 剧情 variable. Users may add other variables and reference them in the image prompt.
+
+### Image reference ports
+
+Image-generation nodes accept optional typed input ports `image` (reference 1, the original/content image) and `image2` (reference 2, the target character/style). Connect separate image-upload nodes to these ports. Both upload nodes must contain valid images, and `image2` requires `image` before a run can be submitted.
+
+References are sent in port order, independent of the order of graph edges. Single-reference Images requests retain the `image` multipart field. Dual-reference edits use two ordered `image[]` parts, following the [Image API multiple-input protocol](https://developers.openai.com/api/docs/guides/image-generation). Chat image generation sends two ordered `image_url` content parts after the prompt. Providers must support multi-image editing for character replacement and style transfer.
+
+The 4×4 sticker and 2×2 comic templates request one complete sheet (`count: 1`); cell layout is described in the prompt, not encoded as the image request count. No cell cropping or provider-specific publishing is performed.
+
 ## Run lifecycle and events
 
 Runs begin as `queued`, move to `running`, and finish as `success`, `error`, `cancelled`, or `interrupted`. Queued runs can also be cancelled or interrupted. Execution follows topological order and stops on the first failed node.

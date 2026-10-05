@@ -2,7 +2,7 @@ import type { XYPosition } from '@vue-flow/core'
 import type { Component } from 'vue'
 
 /** 连线端口的数据种类，连接时校验：只有 kind 相同才能连 */
-export type PortKind = 'image' | 'text' | 'images'
+export type PortKind = 'image' | 'text' | 'images' | 'variables'
 
 export interface PortSchema {
   key: string
@@ -10,7 +10,12 @@ export interface PortSchema {
   kind: PortKind
 }
 
-export type FieldType = 'text' | 'password' | 'textarea' | 'number' | 'select' | 'image'
+export interface VariableBinding {
+  name: string
+  value: string
+}
+
+export type FieldType = 'text' | 'password' | 'textarea' | 'number' | 'select' | 'image' | 'variables'
 
 export interface FieldOption {
   label: string
@@ -23,7 +28,7 @@ export interface FieldSchema {
   label: string
   type: FieldType
   placeholder?: string
-  default?: string | number
+  default?: string | number | VariableBinding[]
   options?: FieldOption[]
   min?: number
   max?: number
@@ -32,7 +37,7 @@ export interface FieldSchema {
   hint?: string
 }
 
-export type NodeKind = 'image-upload' | 'llm' | 'image-gen' | 'output-gallery'
+export type NodeKind = 'image-upload' | 'text-input' | 'variable-set' | 'llm' | 'image-gen' | 'output-gallery'
 
 /** 节点类型注册表条目：UI 与执行都围绕它声明式驱动 */
 export interface NodeTypeSchema {
@@ -52,6 +57,7 @@ export type NodeRunStatus = 'idle' | 'running' | 'success' | 'error'
 /** 节点运行产物：图片统一归一为 images 数组 */
 export interface NodeResult {
   text?: string
+  variables?: Record<string, string>
   images?: string[]
   /** Same-origin downloads for persisted run images, aligned with images. */
   downloadUrls?: string[]
@@ -101,5 +107,6 @@ export interface PresetDef {
   description: string
   icon: Component
   accent: string
+  instructions?: string[]
   build: () => { nodes: FlowNode[]; edges: FlowEdge[] }
 }

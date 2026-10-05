@@ -1,5 +1,4 @@
 import asyncio
-import re
 
 from sqlalchemy import func, select
 
@@ -7,12 +6,10 @@ from .config import Settings
 from .database import Database, Run, RunEvent, now
 from .provider import Provider, ProviderError
 from .schemas import Graph, Node
+from .templates import TemplateError, merge_variables, resolve_template
 
 TERMINAL = {"success", "error", "cancelled", "interrupted"}
 
-
-def resolve_template(value: str, text: str) -> str:
-    return re.sub(r"\{\{\s*([\w-]+)\s*\}\}", lambda m: text if m[1] == "text" else "", value).strip()
 
 
 class RunManager:
@@ -56,11 +53,20 @@ class RunManager:
             connected = {edge.targetHandle for edge in graph.edges if edge.target == node.id}
             if node.type == "image-upload" and not params.image:
                 raise ProviderError("请先为上传节点选择图片")
+            if node.type == "text-input" and not params.text.strip():
+                raise ProviderError("请先为文本输入节点填写内容")
+            if node.type == "variable-set":
+                if not params.variables:
+                    raise ProviderError("请先为变量设置节点添加变量")
+                if any(not item.name or not item.value.strip() for item in params.variables):
+                    raise ProviderError("请先为变量设置节点填写变量名和变量值")
             if node.type in ("llm", "image-gen"):
                 self.provider.connection(params)
                 prompt_port = "text" if node.type == "llm" else "prompt"
                 if not params.prompt.strip() and prompt_port not in connected:
                     raise ProviderError("模型节点缺少提示词或上游文本连接")
+            if node.type == "image-gen" and "image2" in connected and "image" not in connected:
+                raise ProviderError("使用参考图 2 时，请同时连接参考图 1")
             if node.type == "output-gallery" and "images" not in connected:
                 raise ProviderError("输出画廊尚未连接图片组")
 
@@ -105,12 +111,16 @@ class RunManager:
             for edge in graph.edges:
                 if edge.target == node.id:
                     result = results[edge.source]
-                    inputs[edge.targetHandle] = (result.get("text", "") if edge.sourceHandle == "text"
-                                                 else result.get("images", []))
+                    if edge.sourceHandle == "text":
+                        inputs[edge.targetHandle] = result.get("text", "")
+                    elif edge.sourceHandle == "variables":
+                        inputs[edge.targetHandle] = result.get("variables", {})
+                    else:
+                        inputs[edge.targetHandle] = result.get("images", [])
             try:
                 result = await self.execute_node(node, inputs)
-            except (ProviderError, ValueError) as error:
-                message = str(error) if isinstance(error, ProviderError) else "节点输入无效"
+            except (ProviderError, TemplateError, ValueError) as error:
+                message = str(error) if isinstance(error, (ProviderError, TemplateError)) else "节点输入无效"
                 await self.emit(run_id, "node_error", nodeId=node.id, error=message)
                 await self.emit(run_id, "run_error", status="error", error=message)
                 return
@@ -123,17 +133,30 @@ class RunManager:
         image = (inputs.get("image") or [None])[0]
         if node.type == "image-upload":
             return {"images": [params.image]}
+        if node.type == "text-input":
+            if not params.text.strip():
+                raise ProviderError("请先为文本输入节点填写内容")
+            return {"text": params.text}
+        if node.type == "variable-set":
+            if not params.variables or any(not item.name or not item.value.strip() for item in params.variables):
+                raise ProviderError("请先为变量设置节点填写变量名和变量值")
+            own = {item.name: item.value for item in params.variables}
+            return {"variables": merge_variables(inputs.get("variables", {}), own)}
         if node.type == "llm":
             upstream = inputs.get("text", "")
-            prompt = resolve_template(params.prompt, upstream) or upstream
+            prompt = resolve_template(params.prompt, upstream, inputs.get("variables")) or upstream
             return await self.provider.text(params, prompt, image)
         if node.type == "image-gen":
             upstream = inputs.get("prompt", "").strip()
             # Preserve the existing UI contract: connected text takes precedence.
-            prompt = upstream or resolve_template(params.prompt, upstream)
+            if upstream and "variables" not in inputs:
+                prompt = upstream
+            else:
+                prompt = resolve_template(upstream or params.prompt, inputs.get("text", ""), inputs.get("variables"))
             if not prompt:
                 raise ProviderError("缺少提示词")
-            return await self.provider.images(params, prompt, image)
+            image2 = (inputs.get("image2") or [None])[0]
+            return await self.provider.images(params, prompt, image, image2)
         images = inputs.get("images", [])
         if not images:
             raise ProviderError("未接收到任何图片")

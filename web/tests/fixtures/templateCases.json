@@ -1,0 +1,10 @@
+[
+  {"source":"{story} / {{ story }} / { 风格 }", "context":{"story":"登上月球","风格":"水彩"}, "expected":"登上月球 / 登上月球 / 水彩"},
+  {"source":"{_tone} {{scene-1}} {{ text }}", "context":{"_tone":"温暖","scene-1":"雨天","text":"兼容文本"}, "expected":"温暖 雨天 兼容文本"},
+  {"source":"{{story}} {story}", "context":{"story":"第一格\n第二格 $& \\ {{other}}"}, "expected":"第一格\n第二格 $& \\ {{other}} 第一格\n第二格 $& \\ {{other}}"},
+  {"source":"JSON: {\"count\": 4}; triple: {{{story}}}", "context":{"story":"内容"}, "expected":"JSON: {\"count\": 4}; triple: {{{story}}}"},
+  {"source":"{__proto__} {constructor}", "context":{"__proto__":"普通值","constructor":"另一个值"}, "expected":"普通值 另一个值"},
+  {"source":"{missing}", "context":{}, "error":true},
+  {"source":"{{ missing }}", "context":{}, "error":true},
+  {"source":"{toString}", "context":{}, "error":true}
+]

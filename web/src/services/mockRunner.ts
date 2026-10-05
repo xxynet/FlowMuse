@@ -1,5 +1,5 @@
-import type { FlowEdge, FlowNode, NodeResult } from '@/types/flow'
-import { resolveTemplate } from '@/utils/template'
+import type { FlowEdge, FlowNode, NodeResult, VariableBinding } from '@/types/flow'
+import { mergeVariables, resolveTemplate } from '@/utils/template'
 import { hashString, placeholderImage } from '@/services/placeholder'
 
 export interface RunnerHooks {
@@ -16,6 +16,7 @@ const clamp = (value: number, min: number, max: number) => Math.min(max, Math.ma
 
 interface PortValue {
   text?: string
+  variables?: Record<string, string>
   image?: string
   images?: string[]
 }
@@ -68,7 +69,11 @@ function collectInputs(node: FlowNode, edges: FlowEdge[], results: Map<string, N
         inputs[edge.targetHandle] = { text: upstream.text ?? '' }
         break
       case 'image':
-        inputs.image = { image: upstream.images?.[0] }
+      case 'image2':
+        inputs[edge.targetHandle] = { image: upstream.images?.[0] }
+        break
+      case 'variables':
+        inputs.variables = { variables: upstream.variables ?? {} }
         break
       case 'images':
         inputs.images = { images: upstream.images ?? [] }
@@ -97,8 +102,19 @@ async function executeNode(node: FlowNode, inputs: Record<string, PortValue>): P
       return { images: [image] }
     }
 
+    case 'text-input': {
+      const text = typeof params.text === 'string' ? params.text : ''
+      if (!text.trim()) throw new Error('请先为文本输入节点填写内容')
+      return { text }
+    }
+
+    case 'variable-set': {
+      const bindings = Array.isArray(params.variables) ? params.variables as VariableBinding[] : []
+      return { variables: mergeVariables(inputs.variables?.variables ?? {}, bindings) }
+    }
+
     case 'llm': {
-      const prompt = resolveTemplate(params.prompt, { text: inputs.text?.text ?? '' }).trim()
+      const prompt = resolveTemplate(params.prompt, { text: inputs.text?.text ?? '', ...inputs.variables?.variables }).trim()
       await sleep(jitter(900))
       const lines = [
         `【Mock LLM · ${String(params.model || '未配置模型')}】`,
@@ -109,9 +125,11 @@ async function executeNode(node: FlowNode, inputs: Record<string, PortValue>): P
     }
 
     case 'image-gen': {
+      if (inputs.image2?.image && !inputs.image?.image) throw new Error('使用参考图 2 时，请同时连接参考图 1')
       const upstream = inputs.prompt?.text?.trim()
-      const local = resolveTemplate(params.prompt, { text: inputs.prompt?.text ?? '' }).trim()
-      const prompt = upstream || local
+      const prompt = upstream && !inputs.variables
+        ? upstream
+        : resolveTemplate(upstream || params.prompt, { text: inputs.text?.text ?? '', ...inputs.variables?.variables }).trim()
       if (!prompt) throw new Error('缺少提示词：请连接上游文本，或在本节点填写提示词')
       const count = clamp(Number(params.count) || 1, 1, 9)
       const [width, height] = parseSize(String(params.size || '1024x1024'))
