@@ -563,3 +563,173 @@ async def test_two_reference_provider_rejects_missing_first(tmp_path, api_type):
         provider = Provider(settings(tmp_path), client)
         with pytest.raises(ProviderError, match="参考图 1"):
             await provider.images(Params(model="test", apiKey=SECRET, apiType=api_type), "draw", None, IMAGE)
+
+
+@pytest.mark.parametrize("api_type", ["images", "chat"])
+@pytest.mark.parametrize("plot", ["第一格：主角登上月球。\n第二格：遇见小兔子。\n第三格：一起种花。\n第四格：花开了。",
+                                  "主角寻找丢失的钥匙，最后发现钥匙在自己的口袋里。"])
+async def test_user_comic_story_round_trip_and_prompt_composition(tmp_path, api_type, plot):
+    template = "画一张 2×2 四格漫画。\n用户剧情：\n{{ 剧情 }}\n保留参考角色，按左上、右上、左下、右下阅读。"
+    expected = template.replace("{{ 剧情 }}", plot)
+    requests = []
+    def handler(request):
+        requests.append(request)
+        if api_type == "chat":
+            assert request.url.path == "/v1/chat/completions"
+            content = json.loads(request.content)["messages"][-1]["content"]
+            assert content[0]["text"] == expected
+            assert content[1]["image_url"]["url"] == IMAGE
+            return httpx.Response(200, json={"choices": [{"message": {"images": [{"url": IMAGE}]}}]})
+        assert request.url.path == "/v1/images/edits"
+        assert expected.encode() in request.content
+        assert b'name="n"\r\n\r\n1' in request.content
+        return httpx.Response(200, json={"data": [{"b64_json": PNG}]})
+    body = {
+        "nodes": [node("character", "image-upload", image=IMAGE),
+                  node("story", "variable-set", variables=[{"name": "剧情", "value": plot}]),
+                  node("gen", "image-gen", model="test", apiKey=SECRET, apiType=api_type, prompt=template),
+                  node("gallery", "output-gallery")],
+        "edges": [edge("story", "gen", "variables", "variables"),
+                  edge("character", "gen", "image", "image"),
+                  edge("gen", "gallery", "images", "images")],
+    }
+    async with client_for(settings(tmp_path), handler) as (client, _):
+        response = await client.post("/api/workflows", json={"name": "自定义剧情", **body})
+        assert response.status_code == 201
+        saved = (await client.get("/api/workflows/" + response.json()["id"])).json()
+        assert saved["nodes"][1]["data"]["params"]["variables"] == [{"name": "剧情", "value": plot}]
+        saved["nodes"][2]["data"]["params"]["apiKey"] = SECRET
+        response = await client.post("/api/runs", json={"nodes": saved["nodes"], "edges": saved["edges"]})
+        assert response.status_code == 202
+        state = await finish(client, response.json()["id"])
+        assert state["status"] == "success"
+        results = {item["nodeId"]: item["result"] for item in state["events"] if item["type"] == "node_success"}
+        assert results["story"]["variables"] == {"剧情": plot}
+        assert results["gen"]["text"] == expected
+        assert results["gallery"]["images"] == [IMAGE]
+        assert len(requests) == 1  # Story input does not require a model request.
+
+
+@pytest.mark.parametrize("text", ["", " \n\t", "a" * 32001])
+async def test_invalid_text_input_rejected_before_run_creation(tmp_path, text):
+    async with client_for(settings(tmp_path)) as (client, _):
+        response = await client.post("/api/runs", json={"nodes": [node("story", "text-input", text=text)]})
+        assert response.status_code == 422
+        assert (await client.get("/api/runs")).json() == []
+
+
+async def test_text_input_runs_without_provider_credentials(tmp_path):
+    def handler(request):
+        pytest.fail("Text input must not request a model")
+    text = "  用户写的剧情 {{text}}\n第二行  "
+    async with client_for(settings(tmp_path), handler) as (client, _):
+        response = await client.post("/api/runs", json={"nodes": [node("story", "text-input", text=text)]})
+        assert response.status_code == 202
+        state = await finish(client, response.json()["id"])
+        assert state["status"] == "success"
+        assert state["events"][-2]["result"] == {"text": text}
+
+
+async def test_full_upstream_prompt_still_overrides_local_template_and_material(tmp_path):
+    def handler(request):
+        payload = json.loads(request.content)
+        assert payload["prompt"] == "完整上游提示词"
+        return httpx.Response(200, json={"data": [{"b64_json": PNG}]})
+    body = {
+        "nodes": [node("material", "text-input", text="剧情素材"),
+                  node("prompt", "text-input", text="完整上游提示词"),
+                  node("gen", "image-gen", model="test", apiKey=SECRET, prompt="本地格式：{{text}}")],
+        "edges": [edge("material", "gen", "text", "text"), edge("prompt", "gen", "text", "prompt")],
+    }
+    async with client_for(settings(tmp_path), handler) as (client, _):
+        response = await client.post("/api/runs", json=body)
+        assert response.status_code == 202
+        assert (await finish(client, response.json()["id"]))["status"] == "success"
+
+
+@pytest.mark.parametrize("kind", ["llm", "image-gen"])
+async def test_named_variable_chain_round_trip_and_override(tmp_path, kind):
+    expected = "水彩：新剧情\n字面值 {{unknown}}"
+    requests = []
+    def handler(request):
+        requests.append(request)
+        payload = json.loads(request.content)
+        if kind == "llm":
+            assert payload["messages"][-1]["content"][0]["text"] == expected
+            return httpx.Response(200, json={"choices": [{"message": {"content": "result"}}]})
+        assert payload["prompt"] == expected
+        return httpx.Response(200, json={"data": [{"b64_json": PNG}]})
+    body = {
+        "nodes": [
+            node("defaults", "variable-set", variables=[{"name": "style", "value": "水彩"},
+                                                       {"name": "story", "value": "原剧情"}]),
+            node("custom", "variable-set", variables=[{"name": "story", "value": "新剧情\n字面值 {{unknown}}"}]),
+            node("model", kind, model="test", apiKey=SECRET, prompt="{style}：{{ story }}"),
+        ],
+        "edges": [edge("defaults", "custom", "variables", "variables"),
+                  edge("custom", "model", "variables", "variables")],
+    }
+    async with client_for(settings(tmp_path), handler) as (client, _):
+        response = await client.post("/api/workflows", json={"name": "通用变量", **body})
+        assert response.status_code == 201
+        saved = (await client.get("/api/workflows/" + response.json()["id"])).json()
+        assert saved["nodes"][1]["data"]["params"]["variables"] == body["nodes"][1]["data"]["params"]["variables"]
+        saved["nodes"][2]["data"]["params"]["apiKey"] = SECRET
+        response = await client.post("/api/runs", json={"nodes": saved["nodes"], "edges": saved["edges"]})
+        assert response.status_code == 202
+        state = await finish(client, response.json()["id"])
+        assert state["status"] == "success"
+        result = next(item["result"] for item in state["events"] if item.get("nodeId") == "custom"
+                      and item["type"] == "node_success")
+        assert result["variables"] == {"style": "水彩", "story": "新剧情\n字面值 {{unknown}}"}
+        assert len(requests) == 1
+
+
+@pytest.mark.parametrize("bindings", [
+    [], [{"name": "", "value": "data"}], [{"name": "story", "value": " \n"}],
+    [{"name": "1bad", "value": "data"}],
+    [{"name": "story", "value": "one"}, {"name": "story", "value": "two"}],
+    [{"name": "story", "value": "a" * 32001}],
+    [{"name": f"v{i}", "value": "x"} for i in range(51)],
+])
+async def test_invalid_variable_nodes_are_rejected_without_model_calls(tmp_path, bindings):
+    def handler(request):
+        pytest.fail("Invalid variables must not request a model")
+    async with client_for(settings(tmp_path), handler) as (client, _):
+        response = await client.post("/api/runs", json={"nodes": [node("vars", "variable-set", variables=bindings)]})
+        assert response.status_code == 422
+        assert (await client.get("/api/runs")).json() == []
+
+
+@pytest.mark.parametrize("prompt", ["{missing}", "{{ missing }}", "{story}{story}"])
+async def test_missing_variable_or_expanded_prompt_budget_stops_model_call(tmp_path, prompt):
+    def handler(request):
+        pytest.fail("Invalid expansion must not request a model")
+    body = {
+        "nodes": [node("vars", "variable-set", variables=[{"name": "story", "value": "s" * 20000}]),
+                  node("gen", "image-gen", model="test", apiKey=SECRET, prompt=prompt)],
+        "edges": [edge("vars", "gen", "variables", "variables")],
+    }
+    async with client_for(settings(tmp_path), handler) as (client, _):
+        response = await client.post("/api/runs", json=body)
+        assert response.status_code == 202
+        state = await finish(client, response.json()["id"])
+        assert state["status"] == "error"
+        assert "未定义变量" in state["error"] or "32000" in state["error"]
+        assert "s" * 100 not in state["error"]
+
+
+async def test_upstream_prompt_and_named_variables_compose_together(tmp_path):
+    def handler(request):
+        assert json.loads(request.content)["prompt"] == "完整模板：水彩"
+        return httpx.Response(200, json={"data": [{"b64_json": PNG}]})
+    body = {
+        "nodes": [node("vars", "variable-set", variables=[{"name": "style", "value": "水彩"}]),
+                  node("prompt", "text-input", text="完整模板：{style}"),
+                  node("gen", "image-gen", model="test", apiKey=SECRET, prompt="unused")],
+        "edges": [edge("vars", "gen", "variables", "variables"), edge("prompt", "gen", "text", "prompt")],
+    }
+    async with client_for(settings(tmp_path), handler) as (client, _):
+        response = await client.post("/api/runs", json=body)
+        assert response.status_code == 202
+        assert (await finish(client, response.json()["id"]))["status"] == "success"

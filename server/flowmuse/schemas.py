@@ -6,11 +6,16 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-NodeKind = Literal["image-upload", "llm", "image-gen", "output-gallery"]
+from .templates import MAX_VARIABLE_TEXT, MAX_VARIABLES, VARIABLE_NAME
+
+NodeKind = Literal["image-upload", "text-input", "variable-set", "llm", "image-gen", "output-gallery"]
 PORTS = {
     "image-upload": ({}, {"image": "image"}),
-    "llm": ({"text": "text", "image": "image"}, {"text": "text"}),
-    "image-gen": ({"prompt": "text", "image": "image", "image2": "image"}, {"images": "images"}),
+    "text-input": ({}, {"text": "text"}),
+    "variable-set": ({"variables": "variables"}, {"variables": "variables"}),
+    "llm": ({"text": "text", "image": "image", "variables": "variables"}, {"text": "text"}),
+    "image-gen": ({"prompt": "text", "text": "text", "image": "image", "image2": "image", "variables": "variables"},
+                  {"images": "images"}),
     "output-gallery": ({"images": "images"}, {}),
 }
 
@@ -47,9 +52,24 @@ def decode_image(value: str) -> tuple[str, bytes]:
     return mime, data
 
 
+class VariableBinding(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field("", max_length=64)
+    value: str = Field("", max_length=MAX_VARIABLE_TEXT)
+
+    @field_validator("name")
+    @classmethod
+    def valid_name(cls, value):
+        if value and not re.fullmatch(VARIABLE_NAME, value):
+            raise ValueError("变量名须以字母、中文或下划线开头，只能包含字母、中文、数字、下划线或连字符")
+        return value
+
+
 class Params(BaseModel):
     model_config = ConfigDict(extra="forbid")
     image: str = ""
+    text: str = Field("", max_length=32000)
+    variables: list[VariableBinding] = Field(default_factory=list, max_length=MAX_VARIABLES)
     baseUrl: str = Field("", max_length=2048)
     apiKey: str = Field("", max_length=4096, repr=False)
     model: str = Field("", max_length=200)
@@ -59,6 +79,15 @@ class Params(BaseModel):
     apiType: Literal["images", "chat"] = "images"
     size: Literal["1024x1024", "1024x1536", "1536x1024"] = "1024x1024"
     count: int = Field(1, ge=1, le=9)
+
+    @model_validator(mode="after")
+    def valid_variables(self):
+        names = [item.name for item in self.variables if item.name]
+        if len(set(names)) != len(names):
+            raise ValueError("同一节点中的变量名不得重复")
+        if sum(len(item.value) for item in self.variables) > MAX_VARIABLE_TEXT:
+            raise ValueError("变量内容合计不得超过 32000 字符")
+        return self
 
     @field_validator("baseUrl")
     @classmethod

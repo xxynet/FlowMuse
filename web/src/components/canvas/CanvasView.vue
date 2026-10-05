@@ -98,6 +98,8 @@ watch(
     <MiniMap pannable zoomable />
 
     <template #node-image-upload="props"><FlowNodeCard v-bind="props" /></template>
+    <template #node-text-input="props"><FlowNodeCard v-bind="props" /></template>
+    <template #node-variable-set="props"><FlowNodeCard v-bind="props" /></template>
     <template #node-llm="props"><FlowNodeCard v-bind="props" /></template>
     <template #node-image-gen="props"><FlowNodeCard v-bind="props" /></template>
     <template #node-output-gallery="props"><FlowNodeCard v-bind="props" /></template>

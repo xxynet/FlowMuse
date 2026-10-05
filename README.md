@@ -82,7 +82,7 @@ Open the [development frontend](http://127.0.0.1:5173). Vite proxies `/api` requ
 
 The canvas is locked during execution. Loading a preset or clearing the canvas starts a new workflow. API keys remain in page memory and are not saved with the graph; after loading a saved workflow, enter them again or use the backend defaults.
 
-For image-generation nodes, connected upstream text takes precedence over the local prompt. Chat image generation requires a provider that supports image output; a text-only Chat model is not sufficient.
+For image-generation nodes, text connected to the prompt port takes precedence over the local prompt. The separate text-material port fills {{text}} in the local prompt, allowing editable story text to retain layout and style instructions. Chat image generation requires a provider that supports image output; a text-only Chat model is not sufficient.
 
 ### Image playgrounds
 
@@ -93,13 +93,21 @@ Choose a template in the left sidebar and follow its usage steps. The new templa
 | LINE-style sticker pack 4×4 | One character reference | One square sheet containing 16 expressions in four rows and four columns. |
 | Sticker character replacement | Original sticker/sheet on reference port 1; target character on port 2 | One edited image, with instructions to preserve expressions, text, background, and layout. |
 | Reference style transfer | Content image on port 1; style example on port 2 | One redraw preserving the original content with the reference's rendering style. |
-| Four-panel comic | One protagonist reference | One 2×2 comic sheet with an editable four-scene story. |
+| Four-panel comic | One protagonist reference and a user-written plot in a generic variable-setting node | One 2×2 comic sheet following the supplied plot. |
 
-Edit the image-generation prompt to customize expressions, replacement scope, style, or story. For non-square original stickers, choose the closest output aspect ratio in the size field. Generation count is the number of complete output images, not the number of cells in a sheet. Sheets are downloaded as complete images; automatic cell cutting and LINE publishing are not included.
+Edit the image-generation prompt to customize expressions, replacement scope, or style. For comics, fill in the plot variable with a synopsis or four scene descriptions; it is empty by default and must be filled before running. The same variable-setting node can supply styles, captions, or any other named text. For non-square original stickers, choose the closest output aspect ratio in the size field. Generation count is the number of complete output images, not the number of cells in a sheet. Sheets are downloaded as complete images; automatic cell cutting and LINE publishing are not included.
 
 Dual-reference workflows require a provider/model that accepts multiple image inputs. Images API sends the two references to the edit endpoint; Chat generation includes both images in the user message. Input order follows port 1 then port 2 regardless of edge order. Port 2 requires port 1. Existing single-reference workflows keep their original request format.
 
 Layout, likeness, and text preservation are prompt instructions whose visual quality depends on the selected model; tests validate the workflow and request protocol without paid model calls.
+
+### Named variables
+
+Add a variable-setting node and enter one or more name/value pairs, such as story and style. Connect its variable output to the image-generation or LLM node's variable input, then use {story} or {{ story }} in the prompt. Chinese names such as {剧情} are supported.
+
+Variable-setting nodes can be chained: later nodes preserve upstream names and override names they explicitly redefine. Names must be unique within one node. Undefined placeholders produce a readable error before that node requests a model. Variable values are inserted once; braces inside their content are kept literally. Each context allows up to 50 variables with 32000 characters in total, and expanded prompts also have a 32000-character limit.
+
+Variables are saved with workflows. Existing text-input workflows and {{text}} remain supported; an explicitly defined variable named text takes precedence over the text-input alias.
 
 ## Project structure
 

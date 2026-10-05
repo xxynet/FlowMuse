@@ -84,10 +84,32 @@ test('character swap and style transfer distinguish the two reference roles', ()
   }
 })
 
-test('comic produces a single sheet with explicit reading order', () => {
+test('comic uses generic named variables while retaining sheet instructions', () => {
   const graph = presetList.find((preset) => preset.id === 'four-panel-comic').build()
   const generator = graph.nodes.find((node) => node.type === 'image-gen')
+  const story = graph.nodes.find((node) => node.type === 'variable-set')
+  assert.ok(story)
+  assert.equal(story.data.label, '变量设置')
+  assert.deepEqual(story.data.params.variables, [{ name: '剧情', value: '' }])
+  assert.ok(graph.edges.some((edge) => edge.source === story.id && edge.sourceHandle === 'variables'
+    && edge.target === generator.id && edge.targetHandle === 'variables'))
+  assert.ok(!graph.edges.some((edge) => edge.target === generator.id && edge.targetHandle === 'prompt'))
   assert.equal(generator.data.params.count, 1)
   assert.match(generator.data.params.prompt, /2 行 × 2 列/)
   assert.match(generator.data.params.prompt, /左上、右上、左下、右下/)
+  assert.match(generator.data.params.prompt, /{{ 剧情 }}/)
+  story.data.params.variables[0].value = '第一格：主角登上月球。'
+  const { graphPayload } = loadSource('services/api')
+  const saved = graphPayload(graph.nodes, graph.edges, false)
+  assert.deepEqual(saved.nodes.find((node) => node.id === story.id).data.params.variables, story.data.params.variables)
+  assert.deepEqual(presetList.find((preset) => preset.id === 'four-panel-comic').build()
+    .nodes.find((node) => node.type === 'variable-set').data.params.variables, [{ name: '剧情', value: '' }])
+})
+
+test('variable-node defaults are independent across instances', () => {
+  const { makeNode } = loadSource('presets/utils')
+  const first = makeNode('first', 'variable-set', { x: 0, y: 0 })
+  const second = makeNode('second', 'variable-set', { x: 0, y: 0 })
+  first.data.params.variables[0].name = 'changed'
+  assert.equal(second.data.params.variables[0].name, '')
 })
