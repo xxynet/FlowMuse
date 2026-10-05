@@ -68,7 +68,8 @@ function collectInputs(node: FlowNode, edges: FlowEdge[], results: Map<string, N
         inputs[edge.targetHandle] = { text: upstream.text ?? '' }
         break
       case 'image':
-        inputs.image = { image: upstream.images?.[0] }
+      case 'image2':
+        inputs[edge.targetHandle] = { image: upstream.images?.[0] }
         break
       case 'images':
         inputs.images = { images: upstream.images ?? [] }
@@ -109,6 +110,7 @@ async function executeNode(node: FlowNode, inputs: Record<string, PortValue>): P
     }
 
     case 'image-gen': {
+      if (inputs.image2?.image && !inputs.image?.image) throw new Error('使用参考图 2 时，请同时连接参考图 1')
       const upstream = inputs.prompt?.text?.trim()
       const local = resolveTemplate(params.prompt, { text: inputs.prompt?.text ?? '' }).trim()
       const prompt = upstream || local

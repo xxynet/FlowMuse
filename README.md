@@ -7,7 +7,8 @@ FlowMuse includes a Vue frontend and a working FastAPI backend. The default runn
 ## Features
 
 - Drag-and-drop node editing with typed ports and connection validation.
-- Built-in realistic portrait, figurine, and nine-image sticker pack presets.
+- Built-in 4×4 LINE-style sticker sheets, sticker character replacement, reference style transfer, and four-panel comics, alongside realistic portraits, figurines, and nine-image sticker packs.
+- Ordered dual-reference image editing, with distinct original-image and character/style inputs.
 - Text and vision requests through a Chat Completions-compatible API.
 - Image generation and reference-image editing through an Images-compatible API, plus support for compatible Chat image-generation providers.
 - Workflow saving, loading, and deletion, with SQLite-backed run history and events.
@@ -82,6 +83,23 @@ Open the [development frontend](http://127.0.0.1:5173). Vite proxies `/api` requ
 The canvas is locked during execution. Loading a preset or clearing the canvas starts a new workflow. API keys remain in page memory and are not saved with the graph; after loading a saved workflow, enter them again or use the backend defaults.
 
 For image-generation nodes, connected upstream text takes precedence over the local prompt. Chat image generation requires a provider that supports image output; a text-only Chat model is not sufficient.
+
+### Image playgrounds
+
+Choose a template in the left sidebar and follow its usage steps. The new templates call the image model directly, so they do not require an extra LLM request.
+
+| Template | Inputs | Default output |
+| --- | --- | --- |
+| LINE-style sticker pack 4×4 | One character reference | One square sheet containing 16 expressions in four rows and four columns. |
+| Sticker character replacement | Original sticker/sheet on reference port 1; target character on port 2 | One edited image, with instructions to preserve expressions, text, background, and layout. |
+| Reference style transfer | Content image on port 1; style example on port 2 | One redraw preserving the original content with the reference's rendering style. |
+| Four-panel comic | One protagonist reference | One 2×2 comic sheet with an editable four-scene story. |
+
+Edit the image-generation prompt to customize expressions, replacement scope, style, or story. For non-square original stickers, choose the closest output aspect ratio in the size field. Generation count is the number of complete output images, not the number of cells in a sheet. Sheets are downloaded as complete images; automatic cell cutting and LINE publishing are not included.
+
+Dual-reference workflows require a provider/model that accepts multiple image inputs. Images API sends the two references to the edit endpoint; Chat generation includes both images in the user message. Input order follows port 1 then port 2 regardless of edge order. Port 2 requires port 1. Existing single-reference workflows keep their original request format.
+
+Layout, likeness, and text preservation are prompt instructions whose visual quality depends on the selected model; tests validate the workflow and request protocol without paid model calls.
 
 ## Project structure
 

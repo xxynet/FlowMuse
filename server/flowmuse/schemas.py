@@ -10,7 +10,7 @@ NodeKind = Literal["image-upload", "llm", "image-gen", "output-gallery"]
 PORTS = {
     "image-upload": ({}, {"image": "image"}),
     "llm": ({"text": "text", "image": "image"}, {"text": "text"}),
-    "image-gen": ({"prompt": "text", "image": "image"}, {"images": "images"}),
+    "image-gen": ({"prompt": "text", "image": "image", "image2": "image"}, {"images": "images"}),
     "output-gallery": ({"images": "images"}, {}),
 }
 

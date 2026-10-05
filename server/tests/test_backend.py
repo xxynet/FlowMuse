@@ -468,3 +468,98 @@ async def test_download_transport_errors_are_safe(tmp_path, error_type, status):
         response = await client.get(f"/api/runs/{run_id}/images/1/0")
         assert response.status_code == status
         assert SECRET not in response.text
+
+
+@pytest.mark.parametrize("api_type", ["images", "chat"])
+async def test_two_reference_workflow_round_trip_and_order(tmp_path, api_type):
+    # Distinct validated MIME types make reversed or dropped references observable.
+    gif = b"GIF89a" + b"second-reference"
+    second = "data:image/gif;base64," + base64.b64encode(gif).decode()
+    body = {
+        "nodes": [node("original", "image-upload", image=IMAGE),
+                  node("character", "image-upload", image=second),
+                  node("gen", "image-gen", model="test", apiKey=SECRET,
+                       apiType=api_type, prompt="replace the character, preserve layout"),
+                  node("gallery", "output-gallery")],
+        # Deliberately put port 2 first in the edge list.
+        "edges": [edge("character", "gen", "image", "image2"),
+                  edge("original", "gen", "image", "image"),
+                  edge("gen", "gallery", "images", "images")],
+    }
+    requests = []
+    def handler(request):
+        requests.append(request)
+        if api_type == "chat":
+            assert request.url.path == "/v1/chat/completions"
+            content = json.loads(request.content)["messages"][-1]["content"]
+            assert content[0]["text"] == body["nodes"][2]["data"]["params"]["prompt"]
+            assert [part["image_url"]["url"] for part in content[1:]] == [IMAGE, second]
+            return httpx.Response(200, json={"choices": [{"message": {"images": [{"url": IMAGE}]}}]})
+        assert request.url.path == "/v1/images/edits"
+        assert request.content.count(b'name="image[]"') == 2
+        assert request.content.index(base64.b64decode(PNG)) < request.content.index(gif)
+        assert b"replace the character, preserve layout" in request.content
+        return httpx.Response(200, json={"data": [{"b64_json": PNG}]})
+    async with client_for(settings(tmp_path), handler) as (client, _):
+        response = await client.post("/api/workflows", json={"name": "人物替换", **body})
+        assert response.status_code == 201
+        saved = (await client.get("/api/workflows/" + response.json()["id"])).json()
+        assert saved["edges"] == [{**item, "type": "smoothstep"} for item in body["edges"]]
+        assert saved["nodes"][0]["data"]["params"]["image"] == IMAGE
+        assert saved["nodes"][1]["data"]["params"]["image"] == second
+        assert SECRET not in json.dumps(saved)
+        saved["nodes"][2]["data"]["params"]["apiKey"] = SECRET
+        response = await client.post("/api/runs", json={"nodes": saved["nodes"], "edges": saved["edges"]})
+        assert response.status_code == 202
+        state = await finish(client, response.json()["id"])
+        assert state["status"] == "success"
+        assert state["events"][-2]["result"]["images"] == [IMAGE]
+        assert len(requests) == 1
+
+
+async def test_second_reference_requires_first_before_run_is_created(tmp_path):
+    body = {"nodes": [node("upload", "image-upload", image=IMAGE),
+                      node("gen", "image-gen", model="test", apiKey=SECRET, prompt="swap")],
+            "edges": [edge("upload", "gen", "image", "image2")]}
+    async with client_for(settings(tmp_path)) as (client, _):
+        response = await client.post("/api/runs", json=body)
+        assert response.status_code == 422
+        assert "参考图 1" in response.json()["detail"]
+        assert (await client.get("/api/runs")).json() == []
+
+
+async def test_missing_character_upload_rejected_before_model_call(tmp_path):
+    requests = []
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, json={})
+    body = {"nodes": [node("original", "image-upload", image=IMAGE),
+                      node("character", "image-upload"),
+                      node("gen", "image-gen", model="test", apiKey=SECRET, prompt="swap")],
+            "edges": [edge("original", "gen", "image", "image"),
+                      edge("character", "gen", "image", "image2")]}
+    async with client_for(settings(tmp_path), handler) as (client, _):
+        response = await client.post("/api/runs", json=body)
+        assert response.status_code == 422
+        assert "选择图片" in response.json()["detail"]
+        assert not requests
+        assert (await client.get("/api/runs")).json() == []
+
+
+async def test_single_reference_keeps_legacy_multipart_field(tmp_path):
+    def handler(request):
+        assert request.url.path == "/v1/images/edits"
+        assert request.content.count(b'name="image"') == 1
+        assert b'name="image[]"' not in request.content
+        return httpx.Response(200, json={"data": [{"b64_json": PNG}]})
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        provider = Provider(settings(tmp_path), client)
+        assert (await provider.images(Params(model="test", apiKey=SECRET), "draw", IMAGE))["images"] == [IMAGE]
+
+
+@pytest.mark.parametrize("api_type", ["images", "chat"])
+async def test_two_reference_provider_rejects_missing_first(tmp_path, api_type):
+    async with httpx.AsyncClient(transport=httpx.MockTransport(lambda request: pytest.fail("Unexpected call"))) as client:
+        provider = Provider(settings(tmp_path), client)
+        with pytest.raises(ProviderError, match="参考图 1"):
+            await provider.images(Params(model="test", apiKey=SECRET, apiType=api_type), "draw", None, IMAGE)

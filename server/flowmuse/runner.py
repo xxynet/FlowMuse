@@ -61,6 +61,8 @@ class RunManager:
                 prompt_port = "text" if node.type == "llm" else "prompt"
                 if not params.prompt.strip() and prompt_port not in connected:
                     raise ProviderError("模型节点缺少提示词或上游文本连接")
+            if node.type == "image-gen" and "image2" in connected and "image" not in connected:
+                raise ProviderError("使用参考图 2 时，请同时连接参考图 1")
             if node.type == "output-gallery" and "images" not in connected:
                 raise ProviderError("输出画廊尚未连接图片组")
 
@@ -133,7 +135,8 @@ class RunManager:
             prompt = upstream or resolve_template(params.prompt, upstream)
             if not prompt:
                 raise ProviderError("缺少提示词")
-            return await self.provider.images(params, prompt, image)
+            image2 = (inputs.get("image2") or [None])[0]
+            return await self.provider.images(params, prompt, image, image2)
         images = inputs.get("images", [])
         if not images:
             raise ProviderError("未接收到任何图片")

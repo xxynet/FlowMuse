@@ -53,7 +53,8 @@ export const nodeRegistry: Record<NodeKind, NodeTypeSchema> = {
     accent: '#ec4899',
     inputs: [
       { key: 'prompt', label: '提示词', kind: 'text' },
-      { key: 'image', label: '参考图', kind: 'image' },
+      { key: 'image', label: '参考图 1 · 原图', kind: 'image' },
+      { key: 'image2', label: '参考图 2 · 人物 / 风格', kind: 'image' },
     ],
     outputs: [{ key: 'images', label: '图片组', kind: 'images' }],
     fields: [
@@ -76,7 +77,7 @@ export const nodeRegistry: Record<NodeKind, NodeTypeSchema> = {
         type: 'textarea',
         rows: 3,
         placeholder: '描述想要的画面…',
-        hint: '支持 {{text}} 变量；连入上游提示词时以上游为准',
+        hint: '支持 {{text}} 变量；上游提示词优先。双图按端口 1、2 的顺序发送，需模型支持多图编辑',
       },
       {
         key: 'size',

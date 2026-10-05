@@ -87,6 +87,14 @@ Node and edge fields follow the frontend [graph types](../web/src/types/flow.ts)
 
 Use a model supported by your provider. Invalid graphs, parameters, or missing required inputs are rejected before execution. Validation covers duplicate IDs, missing nodes, incompatible ports, multiple connections to one input, and cycles.
 
+### Image reference ports
+
+Image-generation nodes accept optional typed input ports `image` (reference 1, the original/content image) and `image2` (reference 2, the target character/style). Connect separate image-upload nodes to these ports. Both upload nodes must contain valid images, and `image2` requires `image` before a run can be submitted.
+
+References are sent in port order, independent of the order of graph edges. Single-reference Images requests retain the `image` multipart field. Dual-reference edits use two ordered `image[]` parts, following the [Image API multiple-input protocol](https://developers.openai.com/api/docs/guides/image-generation). Chat image generation sends two ordered `image_url` content parts after the prompt. Providers must support multi-image editing for character replacement and style transfer.
+
+The 4×4 sticker and 2×2 comic templates request one complete sheet (`count: 1`); cell layout is described in the prompt, not encoded as the image request count. No cell cropping or provider-specific publishing is performed.
+
 ## Run lifecycle and events
 
 Runs begin as `queued`, move to `running`, and finish as `success`, `error`, `cancelled`, or `interrupted`. Queued runs can also be cancelled or interrupted. Execution follows topological order and stops on the first failed node.

@@ -101,5 +101,6 @@ export interface PresetDef {
   description: string
   icon: Component
   accent: string
+  instructions?: string[]
   build: () => { nodes: FlowNode[]; edges: FlowEdge[] }
 }
